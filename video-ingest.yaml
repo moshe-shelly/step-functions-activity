@@ -219,6 +219,16 @@ Resources:
                   - logs:PutLogEvents
                 Resource:
                   - !Join ["", ["arn:aws:logs:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":log-group:/aws/lambda/*"]]
+              -
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:PutObjectTagging
+                  - s3:CopyObject
+                Resource:
+                  - !Join ["", ["arn:aws:s3:::", Ref: "RawVideoSourceBucket", "/*" ]]
+                  - !Join ["", ["arn:aws:s3:::", Ref: "ApprovedDestination", "/*" ]]
 
   AllowRekognitionToPublishToSNS:
     Type: AWS::IAM::Role
@@ -322,14 +332,16 @@ Resources:
                           };                
                           console.log("s3Config:", s3Config);   
                           //set the task token as metadata of the source object
-                          let putObjectParams = {
+                          let copyObjectParams = {
+                            CopySource: '/' + sf_input.bucket + '/' + sf_input.videoName,
                             Bucket: sf_input.bucket,
                             Key: sf_input.videoName,
                             Metadata: {
                               'x-amz-meta-task-token': data.taskToken
-                            }
+                            },
+                            MetadataDirective: 'REPLACE'
                           }
-                          s3.putObject(putObjectParams, function(err, data) {
+                          s3.copyObject(copyObjectParams, function(err, data) {
                             if (err)  callback(err)
                             else {
                               determineIfVideoIsSafe(s3Config).then((data) => {
@@ -498,28 +510,45 @@ Resources:
           console.log('Loading function');
           const aws = require('aws-sdk');
           const stepfunctions = new aws.StepFunctions();
-          
+          const s3 = new aws.S3();
+
           exports.handler = (event, context, callback) => {
-            //handle just one record with no checking - code for demonstration only (and I was lazy)
-            const s3Config = {
-              bucket: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.bucket.name,
-              videoName: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.object.key
-            };  
-            var params = {
-              stateMachineArn: process.env.StateMachineArn,
-              input: JSON.stringify(s3Config)
-            }
-            console.log('Starting step function execution with:', params);
-            stepfunctions.startExecution(params, function (err, data) {
+            
+            //first make sure this execution was not triggered by the meta-data PUT
+            var headParams = {
+                Bucket: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.bucket.name, 
+                Key: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.object.key
+            };
+            s3.headObject(headParams, function(err, data) {
               if (err) {
-                console.log('err while executing step function', err);
                 callback(err);
               } else {
-                console.log('started execution of step function')
-                callback(null, 'OK!');
+                let activityTaskId = data.Metadata['x-amz-meta-task-token'];
+                if (!activityTaskId){
+                  //we handle just one record with no pre-checks - code for demonstration only (and I was lazy)
+                  const s3Config = {
+                    bucket: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.bucket.name,
+                    videoName: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.object.key
+                  };  
+                  var params = {
+                    stateMachineArn: process.env.StateMachineArn,
+                    input: JSON.stringify(s3Config)
+                  }
+                  console.log('Starting step function execution with:', params);
+                  stepfunctions.startExecution(params, function (err, data) {
+                    if (err) {
+                      console.log('err while executing step function', err);
+                      callback(err);
+                    } else {
+                      console.log('started execution of step function')
+                      callback(null, 'OK!');
+                    }
+                  });
+                } else {
+                  callback(null, "OK, ignoring this event..")
+                }
               }
             });
-              
           }
       Runtime: nodejs6.10
       Timeout: 5
