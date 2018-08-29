@@ -3,7 +3,9 @@
 This sample code is an example of using Step Functions for long asynchronous tasks. For demonstration we will use a video analysis workflow - use ML to detect unsafe content with Amazon Rekognition.
 High level architecture:  
 
-[[https://github.com/moshesaws/video-ingest-step-functions/blob/master/arch.png|alt=architecture]]
+<p align="center">
+<img src="https://github.com/moshesaws/step-functions-activity/blob/master/arch.png">
+</p>
 
 
 ## Background
