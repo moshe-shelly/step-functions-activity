@@ -29,6 +29,10 @@ What things you need to install the software and how to install them
 An active AWS account
 ```
 
+## Disclaimer
+The samples in this repository are meant to help users understand the concept of activities in Step Functions. They are not sufficient for production environments. Users should carefully inspect samples before running and/or using them.
+
+Use at your own risk.
 
 ## Built With
 
