@@ -1,33 +1,34 @@
 # Step Functions - Long Asynchronous Activities
 
-This sample code is an example of using Step Functions for long asynchronous tasks. For demonstration we will use a video analysis workflow - use ML to detect unsafe content with Amazon Rekognition.
-High level architecture:  
+## TL;DR
+A CloudFormation template with an example to using long-running asynchronous activity with AWS Step Functions.
+
+## Background
+Step functions steps can be a Lambda function directly, or an *Activity*. One of the advantages of activities is the ability to perform long-running tasks. The state machine will hold execution and wait for an update from the *worker* who polled and now executes the task, with either success or failure status.
+
+## Video Ingest Use Case Sample
+For demonstrating this, we will use a video ingestion workflow. This automated flow will detect a video file upload to a designated S3 bucket, and trigger a process that uses Amazon Rekognition to check if the video is safe.
+High level architecture:
 
 <p align="center">
 <img src="https://github.com/moshesaws/step-functions-activity/blob/master/arch.png">
 </p>
 
 
-## Background
+## Deploy and Test
 
-With Step Functions you define a work flow from series of steps, to create a state machine. *Activities* are an AWS Step Functions concept that refers to a task to be performed by a worker. This can be used to run long running processes, and notify the state machine that a task is done.
-
-## Getting Started
-
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+* Create a new stack in your AWS account under CloudFormation with the provided yaml file of this repo.
+* Upload an .mp4 video file to the "RawVideoSourceBucket" bucket.
+* From the AWS console open the Step Functions dashboard, and check the state machine execution.
 
 ### Prerequisites
 
 What things you need to install the software and how to install them
 
 ```
-Give examples
+An active AWS account
 ```
 
-
-## Deployment
-
-To deploy the solution in your account simply launch the provided cloud formation template.
 
 ## Built With
 
