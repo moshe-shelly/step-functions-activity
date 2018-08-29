@@ -1,0 +1,620 @@
+Description: 'Automatic video inspection with Step Functions, Rekognition and S3'
+
+Resources:
+
+  WorkflowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-workflow-lambda-role"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Join ["", ["arn:aws:states:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":stateMachine:", Ref: "AWS::StackName","-Ingest"]]
+              -
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt RekognitionRole.Arn
+              -
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ["", ["arn:aws:logs:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":log-group:/aws/lambda/*"]]
+
+  RekognitionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - "rekognition.amazonaws.com"
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-rekognition-role"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - "s3:*"
+                Resource:
+                  - !Join ["", ["arn:aws:s3:::", Ref: "RawVideoSourceBucket", "/*" ]]
+                  - !Join ["", ["arn:aws:s3:::", Ref: "ApprovedDestination", "/*" ]]
+              -
+                Effect: Allow
+                Action:
+                  - "rekognition:GetContentModeration"
+                  - "rekognition:StartContentModeration"
+                Resource:
+                  - "*"
+  
+  LambdaWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-worflow-lambda-role"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - states:GetActivityTask
+                Resource:
+                  - !Ref ValidateWithRekognitionActivity
+              -
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:PutObjectTagging
+                Resource:
+                  - !Join ["", ["arn:aws:s3:::", Ref: "RawVideoSourceBucket", "/*" ]]
+                  - !Join ["", ["arn:aws:s3:::", Ref: "ApprovedDestination", "/*" ]]
+              -
+                Effect: Allow
+                Action:
+                  - rekognition:*
+                Resource:
+                  - "*"
+              -
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt RekognitionRole.Arn
+                  - !GetAtt AllowRekognitionToPublishToSNS.Arn
+              -
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ["", ["arn:aws:logs:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":log-group:/aws/lambda/*"]]
+
+  HandleRekogntionResultsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-rek-results-role"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - states:GetActivityTask
+                Resource:
+                  - !Ref ValidateWithRekognitionActivity
+              -
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:PutObjectTagging
+                  - s3:CopyObject
+                Resource:
+                  - !Join ["", ["arn:aws:s3:::", Ref: "RawVideoSourceBucket", "/*" ]]
+                  - !Join ["", ["arn:aws:s3:::", Ref: "ApprovedDestination", "/*" ]]
+              -
+                Effect: Allow
+                Action:
+                  - "rekognition:GetContentModeration"
+                  - "rekognition:StartContentModeration"
+                Resource:
+                  - "*"
+              -
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ["", ["arn:aws:logs:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":log-group:/aws/lambda/*"]]
+              -
+                Effect: Allow
+                Action:
+                  - states:SendTaskSuccess
+                  - states:SendTaskFailure
+                  - states:SendTaskHeartbeat
+                Resource:
+                  - !Ref ValidateWithRekognitionActivity
+
+  TriggerIngestFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-trigger-ingest-lambda-role"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Join ["", [Ref: "IngestVideoWorkflow"]]
+              -
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Join ["", ["arn:aws:logs:", Ref: "AWS::Region", ":", Ref: "AWS::AccountId", ":log-group:/aws/lambda/*"]]
+
+  AllowRekognitionToPublishToSNS:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - rekognition.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub "${AWS::StackName}-allow-rek-pub-to-topic"
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - SNS:Publish
+                Resource:
+                  - !Ref VideoRekognitionTopic
+
+  VideoRekognitionTopic: 
+    Type: AWS::SNS::Topic
+    Properties: 
+      Subscription: 
+        - 
+          Endpoint: !GetAtt HandleRekogntionResults.Arn
+          Protocol: "lambda"
+      TopicName: "VideoRekognitionResultsTopic"
+    DependsOn: HandleRekogntionResults
+
+  AllowTopicToInvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: HandleRekogntionResults
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref VideoRekognitionTopic
+
+  ApprovedDestination:
+    Type: AWS::S3::Bucket
+    Properties:
+      LoggingConfiguration:
+        DestinationBucketName: !Ref Logs
+        LogFilePrefix: approved-bucket-access/
+
+  Logs:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: LogDeliveryWrite
+
+  ValidateWithRekognitionActivity:
+    Type: "AWS::StepFunctions::Activity"
+    Properties: 
+      Name: ValidateWithRekognitionActivity
+
+  RekognitionActivityWorker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-rekognition-activity-worker"
+      Description: Polls the Step functions' ValidateWithRekognitionActivity for tasks 
+      Handler: index.handler
+      Role: !GetAtt LambdaWorkerRole.Arn
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          'use strict';
+          console.log('Loading function');
+          const aws = require('aws-sdk');
+          const stepfunctions = new aws.StepFunctions();
+          const rek = new aws.Rekognition();
+          const s3 = new aws.S3();
+
+          exports.handler = (event, context, callback) => {
+              
+              var taskParams = {
+                  activityArn: process.env.ValidateWithRekognitionActivityArn
+              };
+              
+              stepfunctions.getActivityTask(taskParams, function(err, data) {
+                  if (err) {
+                      console.log(err, err.stack);
+                      context.fail('An error occured while calling getActivityTask.');
+                      callback(err);
+                  } else {
+                      if (data === null || Object.keys(data).length == 0) {
+                          // No activities scheduled
+                          context.succeed('No activities received after 60 seconds.');
+                      } else {
+                          var sf_input = JSON.parse(data.input);
+                          console.log("Data from Activity Task:", data)
+                          const s3Config = {
+                            bucket: sf_input.bucket,
+                            videoName: sf_input.videoName
+                          };                
+                          console.log("s3Config:", s3Config);   
+                          //set the task token as metadata of the source object
+                          let putObjectParams = {
+                            Bucket: sf_input.bucket,
+                            Key: sf_input.videoName,
+                            Metadata: {
+                              'x-amz-meta-task-token': data.taskToken
+                            }
+                          }
+                          s3.putObject(putObjectParams, function(err, data) {
+                            if (err)  callback(err)
+                            else {
+                              determineIfVideoIsSafe(s3Config).then((data) => {
+                                  const response = {
+                                      statusCode: 200,
+                                      body: JSON.stringify({ Data: data }),
+                                  };
+                                  callback(null, response);
+                              }).catch((error) => {
+                                  callback(null, {
+                                      statusCode: error.statusCode || 501,
+                                      headers: { 'Content-Type': 'text/plain' },
+                                      body: error.message || 'Internal server error',
+                                  });
+                              });  
+                            }
+                          });
+                      }
+                  }
+              });
+          };
+          function determineIfVideoIsSafe(s3Config) {
+                var req_tag = s3Config.bucket+s3Config.videoName.replace(/[^a-zA-Z0-9-_]/g, '');;
+                var params = {
+                    Video: { 
+                        S3Object: {
+                            Bucket: s3Config.bucket,
+                            Name: s3Config.videoName
+                        }
+                    },
+                    ClientRequestToken: req_tag,   
+                    JobTag: req_tag,
+                    MinConfidence: 50,
+                    NotificationChannel: {
+                        RoleArn: process.env.RekognitionRoleArn,
+                        SNSTopicArn: process.env.RekognitionTopicArn
+                    }
+                };
+                console.log('Calling startContentModeration with params:', params);
+                return new Promise((success, reject) => {
+                    rek.startContentModeration(params, function(err, data) {
+                        if (err) {
+                            console.log(err, err.stack); // an error occurred
+                            return reject(new Error(err));
+                        }
+                        console.log('Moderation Complete:', data);
+                        return success(data);
+                    });
+                });
+          }
+      Runtime: nodejs6.10
+      Timeout: 120
+      Environment:
+        Variables:
+          ValidateWithRekognitionActivityArn: !Ref ValidateWithRekognitionActivity
+          RekognitionRoleArn: !GetAtt AllowRekognitionToPublishToSNS.Arn
+          RekognitionTopicArn: !Ref VideoRekognitionTopic
+
+  HandleRekogntionResults:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-rekognition-callback"
+      Description: Triggered by SNS notification, and handles the GetContentModeration results from Rekognition
+      Handler: index.handler
+      Role: !GetAtt HandleRekogntionResultsRole.Arn
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          'use strict';
+          console.log('Loading function');
+          const aws = require('aws-sdk');
+          const rek = new aws.Rekognition();
+          const s3 = new aws.S3();
+          const stepfunctions = new aws.StepFunctions();
+
+          exports.handler = (event, context, callback) => {
+            console.log("Rekognition completed:", JSON.stringify(event, null, 5));
+            let snsMessage = event.Records && event.Records.length>0 ? JSON.parse(event.Records[0].Sns.Message) : null;
+            if (snsMessage && snsMessage.Status && snsMessage.Status=='SUCCEEDED'){
+              let jobid = snsMessage.JobId;
+              var headParams = {
+                  Bucket: snsMessage.Video.S3Bucket, 
+                  Key: snsMessage.Video.S3ObjectName
+              };
+              s3.headObject(headParams, function(err, data) {
+                if (err) {
+                  callback(err);
+                } else {
+                  let activityTaskId = data.Metadata['x-amz-meta-task-token'];
+                  var params = {
+                    JobId: jobid
+                  };
+                  rek.getContentModeration(params, function(err, data) {
+                    if (err) {
+                      console.log(err, err.stack); // an error occurred
+                      callback(err);
+                    }
+                    else {
+                      if (data && data.JobStatus && data.JobStatus=='SUCCEEDED'){
+                        if (data.ModerationLabels.length==0){
+                          console.log('Content is safe! Copying to \'Approved\' Bucket');
+                          var params = {
+                            Bucket: process.env.DestinationBucket,
+                            CopySource: snsMessage.Video.S3Bucket + '/' + snsMessage.Video.S3ObjectName,
+                            Key: "approved-" + snsMessage.Video.S3ObjectName
+                          };
+                          s3.copyObject(params, function(err, data) {
+                            if (err) {
+                              console.log(err, err.stack); // an error occurred
+                              callback('Content safe but S3 copy operation failed');
+                            } else {
+                              console.log(data);
+                              //tell the state machine that this activity's task is successfull
+                              var params = {
+                                output: '{"result": "No moderation labels found, content apprears to be safe!"}',
+                                taskToken: activityTaskId
+                              }
+                              stepfunctions.sendTaskSuccess(params, function (err, data) {
+                                if (err) {
+                                  callback(err);
+                                } else {
+                                  callback(null, 'Content safe, copied to \'Approved\' Bucket');
+                                }
+                              });
+                            }
+                          });
+                        } else {
+                          console.log('Content not safe!');
+                          var params = {
+                            error: 'Found moderation labels, content is not safe!',
+                            taskToken: activityTaskId,
+                            cause: 'Rekognition moderation labels found for this content'
+                          }
+                          stepfunctions.sendTaskFailure(params, function (err, data) {  
+                            callback('Content not safe!');
+                          });                       
+                        }
+                      } else {
+                        callback('Invalid data or bad status from getContentModeration');
+                      }
+                    }
+                  });
+                }
+              });
+            } else {
+                callback('Invalid event or bad-status event received')
+            }    
+          }
+      Runtime: nodejs6.10
+      Timeout: 60
+      Environment:
+        Variables:
+          DestinationBucket: !Ref ApprovedDestination
+
+  TriggerIngestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-trigger-ingest"
+      Description: Triggered by an S3 event notification, to start the Step Functions video ingestion flow
+      Handler: index.handler
+      Role: !GetAtt TriggerIngestFunctionRole.Arn
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          'use strict';
+          console.log('Loading function');
+          const aws = require('aws-sdk');
+          const stepfunctions = new aws.StepFunctions();
+          
+          exports.handler = (event, context, callback) => {
+            //handle just one record with no checking - code for demonstration only (and I was lazy)
+            const s3Config = {
+              bucket: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.bucket.name,
+              videoName: JSON.parse(event.Records[0].Sns.Message).Records[0].s3.object.key
+            };  
+            var params = {
+              stateMachineArn: process.env.StateMachineArn,
+              input: JSON.stringify(s3Config)
+            }
+            console.log('Starting step function execution with:', params);
+            stepfunctions.startExecution(params, function (err, data) {
+              if (err) {
+                console.log('err while executing step function', err);
+                callback(err);
+              } else {
+                console.log('started execution of step function')
+                callback(null, 'OK!');
+              }
+            });
+              
+          }
+      Runtime: nodejs6.10
+      Timeout: 5
+      Environment:
+        Variables:
+          StateMachineArn: !Ref IngestVideoWorkflow
+
+  RawVideoAvailableTopic: 
+    Type: AWS::SNS::Topic
+
+  RawVideoSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      LoggingConfiguration:
+        DestinationBucketName: !Ref Logs
+        LogFilePrefix: raw-bucket-access/
+      NotificationConfiguration:
+        TopicConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Topic:
+              Ref: RawVideoAvailableTopic
+
+  RawVideoAvailableTopicPolicy: 
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AllowBucketToPushNotificationEffect 
+          Effect: Allow
+          Principal:
+            Service: s3.amazonaws.com
+          Action: sns:Publish
+          Resource: "*"
+      Topics:
+      - Ref: RawVideoAvailableTopic
+ 
+  RawVideoAvailableTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint:
+        Fn::GetAtt: [ TriggerIngestFunction , "Arn" ]
+      Protocol: lambda
+      TopicArn:
+        Ref: RawVideoAvailableTopic
+
+  TriggerIngestFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction 
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: RawVideoAvailableTopic 
+      FunctionName:
+        Fn::GetAtt: [ TriggerIngestFunction, "Arn" ]
+
+  #Step Functions
+  IngestVideoWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub ${AWS::StackName}-video-ingest
+      DefinitionString: !Sub |
+        {
+          "StartAt": "ValidateWithRekognition",
+          "States": {
+            "ValidateWithRekognition": {
+              "Type": "Task",
+              "Resource":  "${ValidateWithRekognitionActivity}",
+              "TimeoutSeconds": 1800,
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt WorkflowRole.Arn
+
+  #Cron Scheduler - Execute the poller lambda every 1 minute
+  EventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: cron(* */1 * * ? *)
+      State: ENABLED
+      Description: "Poll for work in the video ingestion workflow activity"
+      Targets:
+        - 
+          Arn: !GetAtt RekognitionActivityWorker.Arn
+          Id: RekognitionActivityWorkerTarget
+  
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: RekognitionActivityWorker
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+        - "EventRule"
+        - "Arn"
