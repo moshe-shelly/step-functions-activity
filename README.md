@@ -1,7 +1,10 @@
 # Step Functions - Long Asynchronous Activities
 
 This sample code is an example of using Step Functions for long asynchronous tasks. For demonstration we will use a video analysis workflow - use ML to detect unsafe content with Amazon Rekognition.
-The flow in high level would be:  
+High level architecture:  
+
+[[https://github.com/moshesaws/video-ingest-step-functions/blob/master/arch.png|alt=architecture]]
+
 
 ## Background
 
