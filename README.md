@@ -21,13 +21,6 @@ High level architecture:
 * From the AWS console open the Step Functions dashboard, and check the state machine execution.
 * If the execution was successfull, check the "approved" bucket - your video should be copied there!
 
-### Prerequisites
-
-What things you need to install the software and how to install them
-
-```
-An active AWS account
-```
 
 ## Disclaimer
 The samples in this repository are meant to help users understand the concept of activities in Step Functions. They are not sufficient for production environments. Users should carefully inspect samples before running and/or using them.
@@ -36,11 +29,7 @@ Use at your own risk.
 
 ## Built With
 
-
 * [AWS](https://aws.amazon.com/) - Amazon Web Services
 * [CloudFormation](https://aws.amazon.com/cloudformation/) - Model and set up your Amazon Web Services resources
-
-
-## License
 
 
