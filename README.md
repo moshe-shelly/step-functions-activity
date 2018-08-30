@@ -15,7 +15,7 @@ High level architecture:
 </p>
 
 
-What happens here?
+So what happens here?
 1. You upload a file to the *Raw* bucket
 2. The bucket is configured to send events when an object is created, which triggers a Lambda function (via an SNS topic, not shown in diagram for simplicity)
 3. The lambda function starts an *execution* of the Step Function's state machine
