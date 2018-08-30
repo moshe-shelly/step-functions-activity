@@ -20,7 +20,9 @@ So what happens here?
 2. The bucket is configured to send events when an object is created, which triggers a Lambda function (via an SNS topic, not shown in diagram for simplicity)
 3. The lambda function starts an *execution* of the Step Function's state machine
 
-In parallel, we have a CloudWatch schedule rule, that **polls** our state machine for work on a 1-minute interval. When system is idle, no tasks are available. But after a file upload, a task is available. What happens now is:
+In parallel, we have a CloudWatch schedule rule, that **polls** our state machine for work on a 1-minute interval. When system is idle, no tasks are available. But after a file upload, a task is available. **Note!** This is a naive implementation, which only handles one task. A real-life implementation would continuously poll, and execute workers in a different process/thread, ideally with a queue in the middle to decouple the poller from the worker.
+
+What happens now is:
 1. The Lambda function gets the details about the new video file from the newly available task, _and stores the task ID_
 2. It triggers an asynchronous request to Rekognition, to detect if the content is safe (Content Moderation)
 3. The async response from Rekognition returns via SNS, to trigger the third (and final) Lambda function, which _signals our state machine about the end of this task_
