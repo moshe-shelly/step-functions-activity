@@ -4,7 +4,7 @@
 Example for using long-running asynchronous activities with AWS Step Functions.
 
 ## Background
-Step functions steps can be a Lambda function directly, or they can be an *Activity*. One of the advantages of activities is the ability to perform long-running tasks. The state machine will hold an execution and wait for an update from the *worker* who polled and now executes the task. The update signals the end of this step of the execution, and can be with either success or failure status.
+Step functions can orchestrate Lambda function directly, and can also use an *Activity* - a step whose actual work gets done externally. One of the advantages of activities is the ability to perform long-running tasks. The state machine will hold its execution and wait for an update from the *worker* who polled and now executes the activity's task. The worker signals the end of this *activity* step, with either success or failure status.
 
 ## Video Ingest Use Case Sample
 For demonstrating this, we will use a video ingestion workflow. This automated flow will detect a video file upload to a designated S3 bucket, and trigger a process that uses Amazon Rekognition to check if the video is safe.
